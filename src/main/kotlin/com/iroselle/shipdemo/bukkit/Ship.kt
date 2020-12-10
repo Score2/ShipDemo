@@ -5,8 +5,7 @@ import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.World
 import org.bukkit.block.Block
-import org.bukkit.block.BlockFace
-import org.bukkit.block.BlockFace.*
+import org.bukkit.craftbukkit.v1_16_R3.entity.CraftFallingBlock
 import org.bukkit.entity.*
 import org.bukkit.entity.FallingBlock
 import org.bukkit.scheduler.BukkitTask
@@ -17,6 +16,8 @@ class Ship {
     val initialLocation: Location
     val player: Player
 
+    var direction: Vector
+
     val blockList = mutableListOf<FallingBlock>()
     val world: World
     lateinit var task: BukkitTask
@@ -25,9 +26,11 @@ class Ship {
     var removing = false
 
     constructor(initialLocation: Location, player: Player, fallingBlocks: MutableList<Pair<Location, Material>> = mutableListOf()) {
+        ships[player] = this
         this.initialLocation = initialLocation
         this.player = player
         this.world = initialLocation.world!!
+        this.direction = player.location.direction
         /*mount = world.spawnFallingBlock(Location(world, initialLocation.x, initialLocation.y + 1, initialLocation.z), Material.AIR.createBlockData())
         mount.setGravity(false)
         mount.dropItem = false
@@ -36,7 +39,7 @@ class Ship {
         house.isInvisible = true
         house.isInvulnerable = true
         house.setGravity(false)*/
-        player.teleport(Location(world, initialLocation.x, initialLocation.y + 1, initialLocation.z))
+//        player.teleport(Location(world, initialLocation.x, initialLocation.y + 1, initialLocation.z))
 //        player.setGravity(false)
 
         fallingBlocks.forEach {
@@ -52,26 +55,45 @@ class Ship {
     }
 
     constructor(player: Player, blocks: MutableList<Block>) {
+        ships[player] = this
         this.initialLocation = player.location
         this.player = player
         this.world = initialLocation.world!!
-        player.teleport(Location(world, initialLocation.x, initialLocation.y + 1, initialLocation.z))
+        this.direction = player.location.direction
+//        player.teleport(Location(world, initialLocation.x, initialLocation.y + 1, initialLocation.z))
 
-        blocks.forEach {
-            blockList.add(blockToFallingBlock(it))
-        }
+        blockList.addAll(blocksToFallingBlocks(blocks))
         start()
 
     }
 
-    fun blockToFallingBlock(block: Block): FallingBlock {
-        block.type = Material.AIR
-        return world.spawnFallingBlock(block.location, block.blockData)
+    fun blocksToFallingBlocks(blocks: MutableList<Block>): MutableList<FallingBlock> {
+        val map = mutableMapOf<Location, Material>()
+        blocks.forEach { block ->
+            val location = block.location.clone()
+            val material = block.type
+            map[location] = material
+            block.type = Material.AIR
+        }
+        val fallingBlocks = mutableListOf<FallingBlock>()
+        map.forEach { entry ->
+            fallingBlocks.add(world.spawnFallingBlock(entry.key, entry.value.createBlockData()).also {
+/*                val craftFallingBlock = it as CraftFallingBlock
+                craftFallingBlock.ticksLived = -1*/
+                it.setGravity(false)
+                it.ticksLived = player.ticksLived
+                it.dropItem = false
+            })
+        }
+        return fallingBlocks
     }
 
     fun fallingBlockToBlock(fallingBlock: FallingBlock): Block {
-        fallingBlock.location.block.type = fallingBlock.blockData.material
-        return fallingBlock.location.block
+        val location = fallingBlock.location.clone()
+        location.block.type = fallingBlock.blockData.material
+        location.block.blockData = fallingBlock.blockData
+        fallingBlock.remove()
+        return location.block
     }
 
     fun generateFallingBlock(location: Location, material: Material = Material.STONE) {
@@ -86,7 +108,7 @@ class Ship {
 
     fun start() {
         task = Bukkit.getScheduler().runTaskTimerAsynchronously(shipDemo, Runnable {
-            move(globalBlockFace, 0.2)
+            move(0.2)
         }, 10, 5)
     }
 
@@ -102,7 +124,7 @@ class Ship {
         player.sendMessage("飞船被破坏")
     }
 
-    fun move(blockFace: BlockFace, increase: Double = 1.0) {
+    fun move(increase: Double = 1.0) {
 
         /*if (mount.passengers.isEmpty()) {
             if (removing) {
@@ -116,33 +138,9 @@ class Ship {
         }*/
 
         blockList.forEach {
-
-            val vector = when (blockFace) {
-                NORTH -> {
-                    Vector(0.0, 0.0, -increase)
-                }
-                EAST -> {
-                    Vector(increase, 0.0, 0.0)
-                }
-                SOUTH -> {
-                    Vector(0.0, 0.0, increase)
-                }
-                WEST -> {
-                    Vector(-increase, 0.0, 0.0)
-                }
-                UP -> {
-                    Vector(0.0, increase, 0.0)
-                }
-                DOWN -> {
-                    Vector(0.0, -increase, 0.0)
-                }
-                else -> {
-                    Vector(0.0, 0.0, 0.0)
-                }
-            }
             Bukkit.getScheduler().runTask(shipDemo, Runnable {
-                it.velocity = player.location.direction.multiply(increase)
-                player.velocity = player.location.direction.multiply(increase * (1 + player.width))
+                it.velocity = direction.multiply(increase)
+//                player.velocity = direction.multiply(increase * (1 + player.width))
             })
         }
 
